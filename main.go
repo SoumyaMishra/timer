@@ -19,6 +19,7 @@ import (
 
 type model struct {
 	name            string
+	message		string
 	altscreen       bool
 	startTimeFormat string
 	duration        time.Duration
@@ -54,6 +55,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if !m.altscreen && m.progress.Width() > maxWidth {
 			m.progress.SetWidth(maxWidth)
 		}
+		labelW := lipgloss.Width(m.message)
+		m.progress.SetWidth(msg.Width - padding*2 - labelW - 5)
 		return m, nil
 
 	case timer.StartStopMsg:
@@ -104,7 +107,12 @@ func (m model) View() string {
 	result +=
 		" - " + boldStyle.Render(endTime.Format(startTimeFormat)) +
 			" - " + boldStyle.Render(m.timer.View()) +
-			"\n" + m.progress.View()
+			"\n" + lipgloss.JoinHorizontal(
+				lipgloss.Top,
+				m.progress.View(),
+				" ",
+				italicStyle.Render(m.message),
+			)
 	if m.altscreen {
 		return altscreenStyle.
 			MarginTop((winHeight - 2) / 2).
@@ -115,6 +123,7 @@ func (m model) View() string {
 
 var (
 	name            string
+	message 	string
 	altscreen       bool
 	startTimeFormat string
 	winHeight       int
@@ -156,6 +165,7 @@ var rootCmd = &cobra.Command{
 			timer:           timer.New(duration, timer.WithInterval(interval)),
 			progress:        progress.New(progress.WithDefaultGradient()),
 			name:            name,
+			message:	 message,
 			altscreen:       altscreen,
 			startTimeFormat: startTimeFormat,
 			start:           time.Now(),
@@ -196,7 +206,7 @@ func init() {
 	rootCmd.Flags().StringVarP(&name, "name", "n", "", "timer name")
 	rootCmd.Flags().BoolVarP(&altscreen, "fullscreen", "f", false, "fullscreen")
 	rootCmd.Flags().StringVarP(&startTimeFormat, "format", "", "", "Specify start time format, possible values: 24h, kitchen")
-
+	rootCmd.Flags().StringVarP(&message, "message", "m", "", "text to display to the right of the progress bar")
 	rootCmd.AddCommand(manCmd)
 }
 
