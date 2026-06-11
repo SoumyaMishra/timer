@@ -19,12 +19,13 @@ import (
 
 type model struct {
 	name            string
-	message		string
+	message         string
 	altscreen       bool
 	startTimeFormat string
 	duration        time.Duration
-	passed          time.Duration
 	start           time.Time
+	endTime         time.Time
+	now             func() time.Time
 	timer           timer.Model
 	progress        progress.Model
 	quitting        bool
@@ -41,12 +42,14 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		var cmds []tea.Cmd
 		var cmd tea.Cmd
 
-		m.passed += m.timer.Interval
-		pct := m.passed.Milliseconds() * 100 / m.duration.Milliseconds()
-		cmds = append(cmds, m.progress.SetPercent(float64(pct)/100))
-
+		previousTimeout := m.timer.Timeout
 		m.timer, cmd = m.timer.Update(msg)
 		cmds = append(cmds, cmd)
+		if m.timer.Timeout != previousTimeout {
+			remaining := max(m.timer.Timeout, 0)
+			m.endTime = m.currentTime().Add(remaining)
+			cmds = append(cmds, m.progress.SetPercent(m.percentComplete(remaining)))
+		}
 		return m, tea.Batch(cmds...)
 
 	case tea.WindowSizeMsg:
@@ -103,16 +106,15 @@ func (m model) View() string {
 	if m.name != "" {
 		result += ": " + italicStyle.Render(m.name)
 	}
-	endTime := m.start.Add(m.duration)
 	result +=
-		" - " + boldStyle.Render(endTime.Format(startTimeFormat)) +
+		" - " + boldStyle.Render(m.endTime.Format(startTimeFormat)) +
 			" - " + boldStyle.Render(m.timer.View()) +
 			"\n" + lipgloss.JoinHorizontal(
-				lipgloss.Top,
-				m.progress.View(),
-				" ",
-				italicStyle.Render(m.message),
-			)
+			lipgloss.Top,
+			m.progress.View(),
+			" ",
+			italicStyle.Render(m.message),
+		)
 	if m.altscreen {
 		return altscreenStyle.
 			MarginTop((winHeight - 2) / 2).
@@ -121,9 +123,23 @@ func (m model) View() string {
 	return result
 }
 
+func (m model) currentTime() time.Time {
+	if m.now != nil {
+		return m.now()
+	}
+	return time.Now()
+}
+
+func (m model) percentComplete(remaining time.Duration) float64 {
+	if m.duration <= 0 {
+		return 1
+	}
+	return float64(m.duration-remaining) / float64(m.duration)
+}
+
 var (
 	name            string
-	message 	string
+	message         string
 	altscreen       bool
 	startTimeFormat string
 	winHeight       int
@@ -160,15 +176,17 @@ var rootCmd = &cobra.Command{
 		if duration < time.Minute {
 			interval = 100 * time.Millisecond
 		}
+		start := time.Now()
 		m, err := tea.NewProgram(model{
 			duration:        duration,
 			timer:           timer.New(duration, timer.WithInterval(interval)),
 			progress:        progress.New(progress.WithDefaultGradient()),
 			name:            name,
-			message:	 message,
+			message:         message,
 			altscreen:       altscreen,
 			startTimeFormat: startTimeFormat,
-			start:           time.Now(),
+			start:           start,
+			endTime:         start.Add(duration),
 		}, opts...).Run()
 		if err != nil {
 			return err
